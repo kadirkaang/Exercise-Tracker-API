@@ -19,6 +19,15 @@ app.use(express.static('public'));
 
 
 function formatDate(date) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        const [year, month, day] = date.split('-');
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthName = months[parseInt(month, 10) - 1];
+        const dateObj = new Date(date);
+        const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+        return `${weekday} ${monthName} ${day} ${year}`;
+    }
+
     const options = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' };
     const formattedDate = date.toLocaleDateString('en-US', options);
     
@@ -102,8 +111,24 @@ app.post('/api/users/:userID/exercises', (req, res) => {
         });
 })
 
-app.get('/api/users/:userID/logs', (req, res) => {
+app.get('/api/users/:userID/logs?', (req, res) => {
     currentID = req.params.userID;
+    let { from, to, limit } = req.query;
+    let fromDate, toDate;
+
+    if (!limit) {
+        limit = 500;
+    }
+    if (!from) {
+        fromDate = new Date('1970-01-01');
+    } else {
+        fromDate = new Date(from);
+    }
+    if (!to) {
+        toDate = new Date();
+    } else {
+        toDate = new Date(to);
+    }
 
     User.findById(currentID)
         .then(currentUser => {
@@ -112,16 +137,33 @@ app.get('/api/users/:userID/logs', (req, res) => {
                     error: "User not found"
                 });
             } else {
-                const logs = currentUser.logs.reverse().map((log) => ({
+                const logs = currentUser.logs
+                    .map((log) => ({
+                        description: log.description,
+                        duration: log.duration,
+                        date: log.date
+                    }))
+                    .filter((log) => {
+                        return log.date >= fromDate && log.date <= toDate;
+                    })
+                    .sort((log1, log2) => {
+                        const date1 = new Date(log1.date);
+                        const date2 = new Date(log2.date);
+                        
+                        return date2 - date1;
+                    })
+                    .slice(0, limit);
+                const formatLogs = logs.map((log) => ({
                     description: log.description,
                     duration: log.duration,
                     date: formatDate(log.date)
                 }))
+
                 res.json({
                     _id: currentUser._id,
                     username: currentUser.username,
                     count: currentUser.count,
-                    log: logs
+                    log: formatLogs
                 })
             }
         })
